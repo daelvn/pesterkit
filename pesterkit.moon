@@ -76,7 +76,7 @@ class HandleSpace
 class Memo extends HandleSpace
   is_memo: => true
 
-class Pesterchum extends HandleSpace
+class Pester extends HandleSpace
 
 class User
   new: (nick, color={r:0,g:0,b:0}, username="pcc31") =>
@@ -121,7 +121,7 @@ class User
     
 
 systemBreaker = User "webchumClient", {r: 255, g: 0, b: 0}
-testmemo = Pesterchum "oghuzOrbit"
+testmemo = Pester "oghuzOrbit"
 
 systemBreaker.user\hook "OnChat", (sender, channel, message) ->
   --print sender.nick, channel, message
