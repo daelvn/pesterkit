@@ -65,6 +65,19 @@ do
 toColorCommand  = (clr)     -> "COLOR >#{clr.r},#{clr.g},#{clr.b}"
 fromMemoMessage = (message) -> parseXml message\gsub "c=(%d+),(%d+),(%d+)", 'c r="%1" g="%2" b="%3"'
 
+class HandleSpace
+  new: (@name) =>
+
+  join: (u) => 
+    u\join @name
+
+  is_memo: => false
+
+class Memo extends HandleSpace
+  is_memo: => true
+
+class Pesterchum extends HandleSpace
+
 class User
   new: (nick, color={r:0,g:0,b:0}, username="pcc31") =>
     expect 1, nick,     {"string"}
@@ -83,21 +96,32 @@ class User
   
   -- pestering
   pester: (handle) =>
-    expect 1, handle, {"string"}
-    error "Target cannot be a memo!" if handle\match "^#"
-    @user\join     handle
-    @user\sendChat handle, "PESTERCHUM:BEGIN"
-    @user\sendChat handle, toColorCommand @color
-    @user\sendChat handle, "Hello. I am systemBreaker."
+    handle\join @user
+    @message handle, "PESTERCHUM:BEGIN"
+    @set_color handle, @color
 
   -- memos
-  memo: (name) =>
-    expect 1, name, {"string"}
-    memo = "#"..name
-    @user\join memo
-    @user\sendChat memo, "Hello. I am systemBreaker."
+  memo: (handle) =>
+    handle\join @user
+    @message handle, "Hello. I am systemBreaker."
 
-systemBreaker = User "systemBreaker"
+  -- send message to memo/1on1
+  message: (handle, text) =>
+    handle_name = handle.name
+    if handle\is_memo!
+      @user\sendChat handle_name, "<c=#{@color.r},#{@color.g},#{@color.b}>#{text}"
+    else
+      @user\sendChat handle_name, text
+
+  -- dynamically sets color
+  set_color: (handle, @color) =>
+    print handle.__name
+    unless handle\is_memo!
+      @user\sendChat handle.name, toColorCommand @color
+    
+
+systemBreaker = User "webchumClient", {r: 255, g: 0, b: 0}
+testmemo = Pesterchum "oghuzOrbit"
 
 systemBreaker.user\hook "OnChat", (sender, channel, message) ->
   --print sender.nick, channel, message
@@ -109,7 +133,14 @@ systemBreaker.user\hook "OnChat", (sender, channel, message) ->
 
 systemBreaker\connect!
 --systemBreaker\pester "angelicEternity"
-systemBreaker\memo "testmemo"
+--systemBreaker\memo testmemo
+
+--systemBreaker\set_color testmemo, {r: c, g: c, b: c}
+--systemBreaker\message testmemo, "test"
+
+systemBreaker\pester testmemo
+systemBreaker\message testmemo, "yo"
+  
 while true do
   sleep 0.5
   systemBreaker.user\think!
