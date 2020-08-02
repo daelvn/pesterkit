@@ -79,14 +79,27 @@ class HandleSpace
   new: (@name) =>
 
   join: (u) => 
-    u\join @name
+    u.user\join @name
+
+  disconnect: (u) =>
+    u\send_command @, PesterCommandTypes.Close
+    u.user\disconnect ""
 
   is_memo: => false
+
+  connect: =>
 
 class Memo extends HandleSpace
   is_memo: => true
 
+  connect: (u) =>
+    @join u
+
 class Pester extends HandleSpace
+  connect: (u) =>
+    @join u
+    u\send_command @, PesterCommandTypes.Begin
+    u\set_color @, u.color
 
 class User
   new: (nick, color={r:0,g:0,b:0}, username="pcc31") =>
@@ -109,19 +122,7 @@ class User
 
   -- disconnects
   disconnect: (handle) =>
-    @send_command handle, PesterCommandTypes.Close
-    @user\disconnect message
-  
-  -- pestering
-  pester: (handle) =>
-    handle\join @user
-    @send_command handle, PesterCommandTypes.Begin
-    @set_color handle, @color
-
-  -- memos
-  memo: (handle) =>
-    handle\join @user
-    @message handle, "Hello. I am systemBreaker."
+    handle\disconnect @
 
   -- send message to memo/1on1
   message: (handle, text) =>
@@ -138,7 +139,6 @@ class User
     
 
 systemBreaker = User "webchumClient", {r: 255, g: 0, b: 0}
-testmemo = Pester "oghuzOrbit"
 
 systemBreaker.user\hook "OnChat", (sender, channel, message) ->
   --print sender.nick, channel, message
@@ -155,6 +155,8 @@ systemBreaker\connect!
 --systemBreaker\set_color testmemo, {r: c, g: c, b: c}
 --systemBreaker\message testmemo, "test"
 
-systemBreaker\pester testmemo
-systemBreaker\message testmemo, "yo"
-systemBreaker\disconnect testmemo
+pester_handler = Pester "oghuzOrbit"
+
+pester_handler\connect systemBreaker
+systemBreaker\message pester_handler, "Hey!"
+pester_handler\disconnect systemBreaker
