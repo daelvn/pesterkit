@@ -1,146 +1,102 @@
 -- pesterkit
--- By daelvn
-irc      = require"irc"
-xml      = require"xml"
-sleep    = require"socket".sleep
-inspect  = require"inspect"
+-- By daelvn, Pancakeddd
+{new: IRC}       = require "irc"
+{load: parseXML} = require "xml"
+{:sleep}         = require "socket"
+inspect          = require "inspect"
 
-parseXml = (str) -> xml.load str
+-- functions
+-- gets a color object and turns it into a color command
+toColor = (t) -> "COLOR >#{t.r},#{t.g},#{t.b}"
+-- colorize a message
+colorize = (m, t) -> "<c=#{t.r},#{t.g},#{t.b}>#{m}</c>"
+-- formats a command
+toCommand = (s) -> "PESTERCHUM:"..s
 
-flatten = (t) ->
-  total  = ""
-  helper = (tt) ->
-    for k, v in pairs tt
-      if "table" == type v
-        total ..= helper v
-      else
-        total ..= v
-  helper t
-  return total
+COMMANDS =
+  -- begin (pester)
+  BEGIN: toCommand "BEGIN"
+  -- cease (pester)
+  CEASE: toCommand "CEASE"
+  -- time (memo)
+  -- h is hours, m is minutes
+  -- 0, 0 is present
+  -- negative hour accepted
+  TIME: (h, m) ->
+    return toCommand ("TIME>i")                      if h == 0 and m == 0
+    return toCommand ("TIME>F%02d:%02d")\format h, m if h > 0  or  m > 0
+    return toCommand ("TIME>P%02d:%02d")\format h, m if h < 0  or  m < 0
 
-flattenMemoMessage = (msg) ->
-  for k, v in pairs msg
-    if "string" == type k
-      msg[k] = nil
-    elseif "table" == type v
-      msg[k] = flattenMemoMessage v
-  return flatten msg
-
-local typeof, expect, typeset
-do
-  typeof = (v) ->
-    -- get metatable
-    local meta
-    if "table" == type v
-      if type_mt = getmetatable v
-        meta = type_mt.__type
-    -- check how to obtain type
-    -- __type
-    if meta
-      switch type meta
-        when "function" then return meta v
-        when "string"   then return meta
-    -- io.type()
-    elseif io.type v
-      return "io"
-    -- type()
+-- Base channel
+-- ucl is for User CLass
+class Channel
+  -- enter
+  join: (ucl) =>
+    @ucl = ucl
+    if @memo
+      @ucl.user\sendChat @target, COMMANDS.TIME @time.hour, @time.minute
     else
-      return type v
-
-  expect = (n, v, ts) ->
-    for ty in *ts
-      return true if ty == typeof v
-    error "bad argument ##{n} (expected #{table.concat ts, ' or '}, got #{type v})", 2
-
-  typeset = (v, ty) ->
-    expect 1, v, {"table"}
-    if mt = getmetatable v
-      mt.__type = ty
+      @ucl.user\sendChat @target, COMMANDS.BEGIN
+  -- leave
+  part: =>
+    @ucl\send @target, COMMANDS.CEASE
+  -- send a message
+  send: (message) =>
+    if @memo
+      @ucl.user\sendChat @target, colorize message, @ucl.color
     else
-      setmetatable v, __type: ty
-    return v
+      @ucl.user\sendChat @target, message
 
---
 
-toColorCommand  = (clr)     -> "COLOR >#{clr.r},#{clr.g},#{clr.b}"
-fromMemoMessage = (message) -> parseXml message\gsub "c=(%d+),(%d+),(%d+)", 'c r="%1" g="%2" b="%3"'
+-- Pester
+class Pester extends Channel
+  memo: false
+  new: (handle) =>
+    @target = handle
 
-COMMANDS = {
-  BEGIN: "BEGIN"
-  CLOSE: "CEASE"
-  BLOCK: "BLOCK"
-  UNBLOCK: "UNBLOCK"
-}
+-- Memo
+class Memo extends Channel
+  memo: true
+  new: (memo, h=0, m=0, key) =>
+    @target = "#"..memo
+    @time   = {hour: h, minute: m}
+    @key    = key
 
-PesterCommand = (command) ->
-  "PESTERCHUM:#{command}"
-
-class HandleSpace
-  new: (@name) =>
-
-  join: (u) => 
-    u.user\join @name
-
-  disconnect: (u) =>
-    u\sendCommand @, COMMANDS.Close
-    u.user\disconnect ""
-
-  isMemo: => false
-
-  connect: =>
-
-class Memo extends HandleSpace
-  isMemo: => true
-
-  disconnect: (u) =>
-    u.user\disconnect ""
-
-  connect: (u) =>
-    @join u
-    u\setColor @, u.color
-
-class Pester extends HandleSpace
-  connect: (u) =>
-    @join u
-    u\sendCommand @, COMMANDS.BEGIN
-    u\setColor @, u.color
-
+-- User class
 class User
+  -- new user
   new: (nick, color={r:0,g:0,b:0}, username="pcc31") =>
-    expect 1, nick,     {"string"}
-    expect 2, color,    {"table"}
-    expect 3, username, {"string"}
-    @handle = nick
-    @color  = color
-    @user   = irc.new :nick, :username
+    @handle   = nick
+    @color    = color
+    @user     = IRC :nick, :username
+    @channels = {}
 
-  -- formats and sends pesterchum command
-  sendCommand: (handle, cmd) =>
-    @user\sendChat handle.name, PesterCommand cmd
-
-  -- connects
+  -- connect
   connect: (host="irc.mindfang.org", port) =>
-    expect 1, host, {"string"}
-    expect 2, port, {"number", "nil"}
     @user\connect host, port
+  -- disconnect
+  disconnect: (message="#{@handle} quit.") =>
+    for name, chan in pairs @channels
+      chan\part!
+    @user\disconnect message
 
-  -- disconnects
-  disconnect: (handle) =>
-    handle\disconnect @
+  -- send as chat
+  send: (target, message) => @channels[target]\send message
 
-  -- send message to memo/1on1
-  message: (handle, text) =>
-    handle_name = handle.name
-    if handle\isMemo!
-      @user\sendChat handle_name, "<c=#{@color.r},#{@color.g},#{@color.b}>#{text}"
-    else
-      @user\sendChat handle_name, text
+  -- set the color
+  setColor: (color) =>
+    @color = color
+    for name, chan in pairs @channels
+      @user\sendChat chan.target, toColor color unless chan.memo
 
-  -- dynamically sets color
-  setColor: (handle, @color) =>
-    unless handle\isMemo!
-      @user\sendChat handle.name, toColorCommand @color
+  -- join a memo or pester someone
+  join: (channel) =>
+    @channels[channel.target] = channel
+    @user\join channel.target, channel.key
+    channel\join @ -- so that the channel can access our functions
 
 {
-  :User, :Pester, :Memo, :HandleSpace
+  :Channel, :Pester, :Memo
+  :User
+  :sleep, :inspect
 }
