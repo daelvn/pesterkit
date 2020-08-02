@@ -1,0 +1,17 @@
+package: pesterkit
+source:
+  url: git://github.com/daelvn/pesterkit
+description:
+  summary: A Pesterchum-over-IRC library for all your Homestuck needs.
+  detailed: >
+    pesterkit is a library for handling Pesterchum
+    (over IRC) messages, users, quirks and more.
+  homepage: https://github.com/daelvn/pesterkit
+dependencies:
+  - luairc
+  - xml2lua
+  - lua >= 5.1
+build:
+  type: builtin
+  modules:
+    pesterkit: pesterkit.lua
