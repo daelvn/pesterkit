@@ -97,18 +97,20 @@ class User
     @color  = color
     @user   = irc.new :nick, :username
 
+  -- formats and sends pesterchum command
   send_command: (handle, cmd) =>
     @user\sendChat handle.name, PesterCommand cmd
 
+  -- connects
   connect: (host="irc.mindfang.org", port) =>
     expect 1, host, {"string"}
     expect 2, port, {"number", "nil"}
     @user\connect host, port
 
+  -- disconnects
   disconnect: (handle) =>
     @send_command handle, PesterCommandTypes.Close
     @user\disconnect message
-    
   
   -- pestering
   pester: (handle) =>
