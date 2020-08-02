@@ -65,6 +65,16 @@ do
 toColorCommand  = (clr)     -> "COLOR >#{clr.r},#{clr.g},#{clr.b}"
 fromMemoMessage = (message) -> parseXml message\gsub "c=(%d+),(%d+),(%d+)", 'c r="%1" g="%2" b="%3"'
 
+PesterCommandTypes = {
+  Begin: "BEGIN"
+  Close: "CEASE"
+  Block: "BLOCK"
+  UnBlock: "UNBLOCK"
+}
+
+PesterCommand = (command) ->
+  "PESTERCHUM:#{command}"
+
 class HandleSpace
   new: (@name) =>
 
@@ -86,18 +96,24 @@ class User
     @handle = nick
     @color  = color
     @user   = irc.new :nick, :username
+
+  send_command: (handle, cmd) =>
+    @user\sendChat handle.name, PesterCommand cmd
+
   connect: (host="irc.mindfang.org", port) =>
     expect 1, host, {"string"}
     expect 2, port, {"number", "nil"}
     @user\connect host, port
-  disconnect: (message="#{@handle} (webchum) disconnected.") =>
-    expect 1, message, {"string"}
+
+  disconnect: (handle) =>
+    @send_command handle, PesterCommandTypes.Close
     @user\disconnect message
+    
   
   -- pestering
   pester: (handle) =>
     handle\join @user
-    @message handle, "PESTERCHUM:BEGIN"
+    @send_command handle, PesterCommandTypes.Begin
     @set_color handle, @color
 
   -- memos
@@ -115,7 +131,6 @@ class User
 
   -- dynamically sets color
   set_color: (handle, @color) =>
-    print handle.__name
     unless handle\is_memo!
       @user\sendChat handle.name, toColorCommand @color
     
@@ -140,7 +155,4 @@ systemBreaker\connect!
 
 systemBreaker\pester testmemo
 systemBreaker\message testmemo, "yo"
-  
-while true do
-  sleep 0.5
-  systemBreaker.user\think!
+systemBreaker\disconnect testmemo
