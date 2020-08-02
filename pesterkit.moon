@@ -92,6 +92,9 @@ class HandleSpace
 class Memo extends HandleSpace
   is_memo: => true
 
+  disconnect: (u) =>
+    u.user\disconnect ""
+
   connect: (u) =>
     @join u
 
@@ -155,7 +158,7 @@ systemBreaker\connect!
 --systemBreaker\set_color testmemo, {r: c, g: c, b: c}
 --systemBreaker\message testmemo, "test"
 
-pester_handler = Pester "oghuzOrbit"
+pester_handler = Memo "#testmemo"
 
 pester_handler\connect systemBreaker
 systemBreaker\message pester_handler, "Hey!"
