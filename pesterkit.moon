@@ -66,10 +66,10 @@ toColorCommand  = (clr)     -> "COLOR >#{clr.r},#{clr.g},#{clr.b}"
 fromMemoMessage = (message) -> parseXml message\gsub "c=(%d+),(%d+),(%d+)", 'c r="%1" g="%2" b="%3"'
 
 PesterCommandTypes = {
-  Begin: "BEGIN"
-  Close: "CEASE"
-  Block: "BLOCK"
-  UnBlock: "UNBLOCK"
+  BEGIN: "BEGIN"
+  CLOSE: "CEASE"
+  BLOCK: "BLOCK"
+  UNBLOCK: "UNBLOCK"
 }
 
 PesterCommand = (command) ->
@@ -82,27 +82,28 @@ class HandleSpace
     u.user\join @name
 
   disconnect: (u) =>
-    u\send_command @, PesterCommandTypes.Close
+    u\sendCommand @, PesterCommandTypes.Close
     u.user\disconnect ""
 
-  is_memo: => false
+  isMemo: => false
 
   connect: =>
 
 class Memo extends HandleSpace
-  is_memo: => true
+  isMemo: => true
 
   disconnect: (u) =>
     u.user\disconnect ""
 
   connect: (u) =>
     @join u
+    u\setColor @, u.color
 
 class Pester extends HandleSpace
   connect: (u) =>
     @join u
-    u\send_command @, PesterCommandTypes.Begin
-    u\set_color @, u.color
+    u\sendCommand @, PesterCommandTypes.BEGIN
+    u\setColor @, u.color
 
 class User
   new: (nick, color={r:0,g:0,b:0}, username="pcc31") =>
@@ -114,7 +115,7 @@ class User
     @user   = irc.new :nick, :username
 
   -- formats and sends pesterchum command
-  send_command: (handle, cmd) =>
+  sendCommand: (handle, cmd) =>
     @user\sendChat handle.name, PesterCommand cmd
 
   -- connects
@@ -130,18 +131,19 @@ class User
   -- send message to memo/1on1
   message: (handle, text) =>
     handle_name = handle.name
-    if handle\is_memo!
+    if handle\isMemo!
       @user\sendChat handle_name, "<c=#{@color.r},#{@color.g},#{@color.b}>#{text}"
     else
       @user\sendChat handle_name, text
 
   -- dynamically sets color
-  set_color: (handle, @color) =>
-    unless handle\is_memo!
+  setColor: (handle, @color) =>
+    unless handle\isMemo!
       @user\sendChat handle.name, toColorCommand @color
     
 
 systemBreaker = User "webchumClient", {r: 255, g: 0, b: 0}
+testUser = User "heyMan", {r:0, g:0, b:255}
 
 systemBreaker.user\hook "OnChat", (sender, channel, message) ->
   --print sender.nick, channel, message
@@ -152,6 +154,7 @@ systemBreaker.user\hook "OnChat", (sender, channel, message) ->
     print channel, sender.nick, "#{t.r},#{t.g},#{t.b}", flattenMemoMessage t
 
 systemBreaker\connect!
+testUser\connect!
 --systemBreaker\pester "angelicEternity"
 --systemBreaker\memo testmemo
 
@@ -160,6 +163,17 @@ systemBreaker\connect!
 
 pester_handler = Memo "#testmemo"
 
-pester_handler\connect systemBreaker
-systemBreaker\message pester_handler, "Hey!"
-pester_handler\disconnect systemBreaker
+users = {}
+
+for i = 1, 10
+  u = User "userDude#{i}", {r:math.random(0, 200), g:math.random(0, 200), b:math.random(0, 200)}
+  u\connect!
+  pester_handler\connect u
+  users[#users+1] = u
+
+for user in *users
+  sleep 0.5
+  user\message pester_handler, "My name is #{user.handle} and my index is #{i}"
+
+for user in *users
+  pester_handler\disconnect user

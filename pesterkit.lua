@@ -107,11 +107,16 @@ do
   local _class_0
   local _base_0 = {
     join = function(self, u)
-      return u:join(self.name)
+      return u.user:join(self.name)
+    end,
+    disconnect = function(self, u)
+      u:send_command(self, PesterCommandTypes.Close)
+      return u.user:disconnect("")
     end,
     is_memo = function(self)
       return false
-    end
+    end,
+    connect = function(self) end
   }
   _base_0.__index = _base_0
   _class_0 = setmetatable({
@@ -138,6 +143,12 @@ do
   local _base_0 = {
     is_memo = function(self)
       return true
+    end,
+    disconnect = function(self, u)
+      return u.user:disconnect("")
+    end,
+    connect = function(self, u)
+      return self:join(u)
     end
   }
   _base_0.__index = _base_0
@@ -177,7 +188,13 @@ local Pester
 do
   local _class_0
   local _parent_0 = HandleSpace
-  local _base_0 = { }
+  local _base_0 = {
+    connect = function(self, u)
+      self:join(u)
+      u:send_command(self, PesterCommandTypes.Begin)
+      return u:set_color(self, u.color)
+    end
+  }
   _base_0.__index = _base_0
   setmetatable(_base_0, _parent_0.__base)
   _class_0 = setmetatable({
@@ -232,17 +249,7 @@ do
       return self.user:connect(host, port)
     end,
     disconnect = function(self, handle)
-      self:send_command(handle, PesterCommandTypes.Close)
-      return self.user:disconnect(message)
-    end,
-    pester = function(self, handle)
-      handle:join(self.user)
-      self:send_command(handle, PesterCommandTypes.Begin)
-      return self:set_color(handle, self.color)
-    end,
-    memo = function(self, handle)
-      handle:join(self.user)
-      return self:message(handle, "Hello. I am systemBreaker.")
+      return handle:disconnect(self)
     end,
     message = function(self, handle, text)
       local handle_name = handle.name
@@ -306,7 +313,6 @@ local systemBreaker = User("webchumClient", {
   g = 0,
   b = 0
 })
-local testmemo = Pester("oghuzOrbit")
 systemBreaker.user:hook("OnChat", function(sender, channel, message)
   if message:match("^P") then
     return print(channel, sender.nick, message)
@@ -316,6 +322,7 @@ systemBreaker.user:hook("OnChat", function(sender, channel, message)
   end
 end)
 systemBreaker:connect()
-systemBreaker:pester(testmemo)
-systemBreaker:message(testmemo, "yo")
-return systemBreaker:disconnect(testmemo)
+local pester_handler = Memo("#testmemo")
+pester_handler:connect(systemBreaker)
+systemBreaker:message(pester_handler, "Hey!")
+return pester_handler:disconnect(systemBreaker)
