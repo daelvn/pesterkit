@@ -325,6 +325,16 @@ class User
     @quirks   = {}
     @blocked  = {}
     @friends  = {}
+    @moods    = {}
+
+    @hook (user, chan, msg) ->
+      print chan, user.nick, msg
+      
+      if user != @handle and msg\match"GETMOOD " and msg\match @handle 
+        @sendMood!
+      else if user != @handle and msg\match"MOOD >[0-9]+"
+        @moods[user.nick] = moodn tonumber msg\match"[0-9]+"
+        print "#{user.nick} is now #{@moods[user.nick]}"
 
   -- connect
   connect: (t={}) =>
@@ -357,12 +367,16 @@ class User
       --@user\join chan.target
       @user\sendChat chan.target, toColor color unless chan.memo
 
+  -- send mood
+  sendMood: =>
+    @join Memo "pesterchum" unless @channels["#pesterchum"]
+    @user\sendChat "#pesterchum", COMMANDS.MOOD REVMOODS[mood]
+
   -- set the mood
   setMood: (mood) =>
     error "invalid mood" unless REVMOODS[mood]
     @mood = moods
-    @join Memo "pesterchum" unless @channels["#pesterchum"]
-    @user\sendChat "#pesterchum", COMMANDS.MOOD REVMOODS[mood]
+    @sendMood!
 
   -- join a memo or pester someone
   join: (channel) =>
