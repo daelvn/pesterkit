@@ -3,14 +3,13 @@ pesterkit = require "pesterkit"
 import User, Pester, Memo, sleep, inspect from pesterkit
 import Quirk, quirk                       from pesterkit
 
-systemBreaker = User "systemBreaker"
+systemBreaker = User "deathGrips"
 systemBreaker\connect centralize: false
-
-systemBreaker.user\hook "OnChat", (sender, channel, message) ->
-  print channel, sender.nick, message
-
 systemBreaker\join Memo "testmemo"
-systemBreaker\quirk Quirk "misspell", 10
+
+systemBreaker\hook (sender, channel, message) ->
+  print channel, sender.nick, message
+systemBreaker\setMood "offline"
 systemBreaker\send "#testmemo", "Hello. This is systemBreaker."
 
 while true

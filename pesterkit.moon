@@ -70,6 +70,18 @@ zip = (t1, t2) ->
     s = not s
   tx
 
+-- constants
+-- moods
+MOODS = {
+  "chummy",   "rancorous", "offline",   "pleasant",   "distraught"
+  "pranky",   "smooth",    "ecstatic",  "relaxed",    "discontent"
+  "devious",  "sleek",     "detestful", "mirthful",   "manipulative"
+  "vigorous", "perky",     "acceptant", "protective", "mystified"
+  "amazed",   "insolent",  "bemused"
+}
+REVMOODS = {v, k for k, v in pairs MOODS}
+moodn = (n) -> MOODS[n+1]
+-- commands
 COMMANDS =
   -- begin (pester)
   BEGIN: toCommand "BEGIN"
@@ -79,6 +91,8 @@ COMMANDS =
   BLOCK: toCommand "BLOCK"
   -- unblock (pester)
   UNBLOCK: toCommand "UNBLOCK"
+  -- mood (meta)
+  MOOD: (n) -> "MOOD >#{n}"
   -- time (memo)
   -- h is hours, m is minutes
   -- 0, 0 is present
@@ -299,6 +313,9 @@ class Quirk
 
 -- User class
 class User
+  -- TODO moods
+  -- TODO getmoods
+  -- TODO logs
   -- new user
   new: (nick, color={r:0,g:0,b:0}, username="pcc31") =>
     @handle   = nick
@@ -315,21 +332,23 @@ class User
     t.port or= 6667
     @user\connect t.host, t.port
     @user\join "#pesterchum" if t.centralize
-
   -- disconnect
   disconnect: (message="#{@handle} quit.") =>
     for name, chan in pairs @channels
       chan\part!
     @user\disconnect message
+  
+  -- hook a function to the chat
+  hook: (f) => @user\hook "OnChat", f
 
   -- send as chat
   send: (target, message) =>
-    for quirk in *@quirks
+    for name, quirk in pairs @quirks
       message = quirk\apply message
     @channels[target]\send message
 
   -- add a quirk
-  quirk: (quirk) => table.insert @quirks, quirk
+  quirk: (name, quirk) => @quirks[name] = quirk
 
   -- set the color
   setColor: (color) =>
@@ -337,6 +356,13 @@ class User
     for name, chan in pairs @channels
       --@user\join chan.target
       @user\sendChat chan.target, toColor color unless chan.memo
+
+  -- set the mood
+  setMood: (mood) =>
+    error "invalid mood" unless REVMOODS[mood]
+    @mood = moods
+    @join Memo "pesterchum" unless @channels["#pesterchum"]
+    @user\sendChat "#pesterchum", COMMANDS.MOOD REVMOODS[mood]
 
   -- join a memo or pester someone
   join: (channel) =>
@@ -376,5 +402,6 @@ class User
   :Channel, :Pester, :Memo
   :Quirk, :quirk
   :User
+  :MOODS
   :sleep, :inspect
 }
