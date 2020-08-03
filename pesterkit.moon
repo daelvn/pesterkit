@@ -9,7 +9,7 @@ inspect          = require "inspect"
 
 -- logging
 lgr       = logger.minimal!
-lgr.level = "all" -- change to all for no debug info, none for all (i know, fuck old kankri)
+lgr.level = "none" -- change to all for no debug info, none for all (i know, fuck old kankri)
 log_      = lgr "none"
 compose   = (...) -> return table.concat {...}, "\t"
 log       = (...) -> log_ compose ...
@@ -41,7 +41,7 @@ splitWs = (s) ->
   words = {""}
   for i = 1, #s
     c = string.sub(s, i, i)
-    if c\match "[ \t\n]"
+    if c\match "%s"
       whitespace[#whitespace] = do
         if whitespace[#whitespace] != nil
           whitespace[#whitespace] .. c
@@ -75,6 +75,10 @@ COMMANDS =
   BEGIN: toCommand "BEGIN"
   -- cease (pester)
   CEASE: toCommand "CEASE"
+  -- block (pester)
+  BLOCK: toCommand "BLOCK"
+  -- unblock (pester)
+  UNBLOCK: toCommand "UNBLOCK"
   -- time (memo)
   -- h is hours, m is minutes
   -- 0, 0 is present
@@ -129,7 +133,6 @@ KDICT = {}
 for i, l in pairs KBLOC
   for j, k in pairs l
     KDICT[k] = {i, j}
-setmetatable KDICT, __index: (i) => print "#{i}"
 SDICT = {"a": "e",   "b": "d",  "c": "k",  "d": "g",   "e": "eh",
          "f": "ph",  "g": "j",  "h": "h",  "i": "ai",  "j": "ge",
          "k": "c",   "l": "ll", "m": "n",  "n": "m",   "o": "oa",
@@ -171,9 +174,8 @@ quirk.transpose = (word, i, rate) ->
       when 1 then     i + chance.core.fromSet "more"
       when #word then i + chance.core.fromSet "less"
       else            i + chance.core.fromSet "moreless"
-    chars              = [c for c in word\gmatch "."]
+    chars              = [c for c in oldword\gmatch "."]
     chars[i], chars[j] = chars[j], chars[i]
-    oldword            = word
     word               = table.concat chars, ""
   log rate, userate, i, oldword, word
   return word
@@ -183,7 +185,7 @@ quirk.randomLetter = (word, i, rate) ->
   oldword = word
   if userate <= rate
     by   = chance.core.fromSet "letters"
-    word = (word\sub 0, i+1) .. by .. (word\sub i+1)
+    word = (oldword\sub 0, i+1) .. by .. (oldword\sub i+1)
     log rate, userate, i, "#{word\sub i, i} ++ #{by}?", oldword, word
   else
     log rate, userate, i, "#{word\sub i, i} == #{word\sub i, i}.", oldword, word
@@ -194,7 +196,7 @@ quirk.randomReplace = (word, i, rate) ->
   oldword = word
   if userate <= rate
     by   = chance.core.fromSet "letters"
-    word = (word\sub 0, i-1) .. by .. (word\sub i+1)
+    word = (oldword\sub 0, i-1) .. by .. (oldword\sub i+1)
     log rate, userate, i, "#{oldword\sub i, i} -> #{by}?", oldword, word
   else
     log rate, userate, i, "#{word\sub i, i} == #{word\sub i, i}.", oldword, word
@@ -205,13 +207,13 @@ quirk.soundAlike = (word, i, rate) ->
   userate = chance.misc.d100!
   oldword = word
   if userate <= rate
-    word = (word\sub 0, i-1) .. SDICT[word\sub i, i] .. (word\sub i+1)
+    word = (oldword\sub 0, i-1) .. SDICT[oldword\sub i, i] .. (oldword\sub i+1)
     log rate, userate, i, "#{oldword\sub i, i} -> #{SDICT[word\sub i, i]}", oldword, word
   else
     log rate, userate, i, "#{oldword\sub i, i} == #{oldword\sub i, i}", oldword, word
   return word
 -- misspellings
-chance.core.set "misspell", quirk
+chance.core.set "misspell", {quirk.mistype, quirk.randomLetter, quirk.randomReplace, quirk.soundAlike, quirk.transpose}
 
 -- Quirking support
 sanitize  = (pattern) -> pattern\gsub "[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0" if pattern
@@ -257,9 +259,43 @@ class Quirk
           for i=1, #word
             word = quirk.mistype word, i, @rate
           words[i] = word
-        return zip words, whitespace
-      --when "misspell"
-      --  func = chance.core.fromSet "misspell"       
+        return table.concat (zip words, whitespace), ""
+      when "transpose"
+        words, whitespace = splitWs message
+        for i, word in ipairs words
+          for i=1, #word
+            word = quirk.transpose word, i, @rate
+          words[i] = word
+        return table.concat (zip words, whitespace), ""
+      when "randomletter"
+        words, whitespace = splitWs message
+        for i, word in ipairs words
+          for i=1, #word
+            word = quirk.randomLetter word, i, @rate
+          words[i] = word
+        return table.concat (zip words, whitespace), ""
+      when "randomreplace"
+        words, whitespace = splitWs message
+        for i, word in ipairs words
+          for i=1, #word
+            word = quirk.randomReplace word, i, @rate
+          words[i] = word
+        return table.concat (zip words, whitespace), ""
+      when "soundalike"
+        words, whitespace = splitWs message
+        for i, word in ipairs words
+          for i=1, #word
+            word = quirk.soundAlike word, i, @rate
+          words[i] = word
+        return table.concat (zip words, whitespace), ""
+      when "misspell"
+        words, whitespace = splitWs message
+        for i, word in ipairs words
+          func = chance.core.fromSet "misspell"
+          for i=1, #word
+            word = func word, i, @rate
+          words[i] = word
+        return table.concat (zip words, whitespace), ""      
 
 -- User class
 class User
@@ -270,13 +306,15 @@ class User
     @user     = IRC :nick, :username
     @channels = {}
     @quirks   = {}
-    -- TODO friends
-    -- TODO blocked
+    @blocked  = {}
+    @friends  = {}
 
   -- connect
-  connect: (host="irc.mindfang.org", port) =>
-    @user\connect host, port
-    @user\join "#pesterchum"
+  connect: (t={}) =>
+    t.host or= "irc.mindfang.org"
+    t.port or= 6667
+    @user\connect t.host, t.port
+    @user\join "#pesterchum" if t.centralize
 
   -- disconnect
   disconnect: (message="#{@handle} quit.") =>
@@ -297,7 +335,7 @@ class User
   setColor: (color) =>
     @color = color
     for name, chan in pairs @channels
-      @user\join chan.target
+      --@user\join chan.target
       @user\sendChat chan.target, toColor color unless chan.memo
 
   -- join a memo or pester someone
@@ -305,6 +343,34 @@ class User
     @channels[channel.target] = channel
     @user\join channel.target, channel.key
     channel\join @ -- so that the channel can access our functions
+  -- leave a channel
+  part: (channel) =>
+    @channels[channel]\part!
+    @channels[channel] = nil
+
+  -- blocks someone
+  block: (handle, close=true) =>
+    error "Cannot block a memo" if @channels[handle].memo
+    @blocked[handle] = true
+    if @channels[handle]
+      @channels[handle]\send COMMANDS.BLOCK
+      @channels[handle]\send COMMANDS.CEASE if close
+      @channels[handle]\part!               if close
+  -- unblocks someone
+  unblock: (handle, interact=true) =>
+    if @channels[handle]
+      error "Cannot block a memo" if @channels[handle].memo
+    else
+      @join Pester handle
+    @blocked[handle] = false
+    @channels[handle]\send COMMANDS.UNBLOCK
+    @channels[handle]\send COMMANDS.BEGIN if interact
+
+  -- befriend someone
+  friend: (handle) => @friends[handle] = true
+  -- unfriend someone
+  unfriend: (handle) => @friends[handle] = true
+    
 
 {
   :Channel, :Pester, :Memo
