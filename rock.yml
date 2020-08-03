@@ -10,6 +10,7 @@ description:
 dependencies:
   - luairc
   - xml2lua
+  - debugkit
   - lua >= 5.1
 build:
   type: builtin

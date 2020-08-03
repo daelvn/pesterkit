@@ -1,18 +1,17 @@
-import User, Pester, Memo, sleep, inspect from require "pesterkit"
+pesterkit = require "pesterkit"
+
+import User, Pester, Memo, sleep, inspect from pesterkit
+import Quirk, quirk                       from pesterkit
 
 systemBreaker = User "systemBreaker"
+systemBreaker\connect!
+
 systemBreaker.user\hook "OnChat", (sender, channel, message) ->
   print channel, sender.nick, message
 
-systemBreaker\connect!
 systemBreaker\join Memo "testmemo"
-systemBreaker\join Pester "angelicEternity"
-systemBreaker\setColor {r: 0, g: 0, b: 0}
-systemBreaker\send "#testmemo",       "Hi. I am systemBreaker."
-systemBreaker\send "angelicEternity", "Hi. I am systemBreaker."
-systemBreaker\setColor {r: 255, g: 0, b: 255}
-systemBreaker\send "#testmemo",       "Hi. I am systemBreaker. Again"
-systemBreaker\send "angelicEternity", "Hi. I am systemBreaker. Again"
+systemBreaker\quirk Quirk "mistype", 100
+systemBreaker\send "Hello. This is systemBreaker."
 
 while true
   systemBreaker.user\think!
