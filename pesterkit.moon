@@ -1,11 +1,11 @@
 -- pesterkit
 -- By daelvn, Pancakeddd
-{new: IRC}       = require "irc"
-{load: parseXML} = require "xml"
-{:sleep}         = require "socket"
-{:logger}        = require "debugkit.log"
-chance           = require "chance.chance"
-inspect          = require "inspect"
+{new: IRC}                       = require "irc"
+{load: parseXML}                 = require "xml"
+{:sleep}                         = require "socket"
+{:logger, :sink, :Logger, :Sink} = require "debugkit.log"
+chance                           = require "chance.chance"
+inspect                          = require "inspect"
 
 -- logging
 lgr       = logger.minimal!
@@ -13,6 +13,42 @@ lgr.level = "none" -- change to all for no debug info, none for all (i know, fuc
 log_      = lgr "none"
 compose   = (...) -> return table.concat {...}, "\t"
 log       = (...) -> log_ compose ...
+
+-- create loggers for pesterlogs
+levels     = (t) -> {v, i for i, v in ipairs t}
+Pestersink = (file) -> Sink {
+  open: =>
+    unless @flag.opened
+      fh  = safeOpen file, "a"
+      if fh.error then error "Pestersink $ could not open file #{file}!"
+      @fh, @flag.opened = fh, true
+  write: (L, tag, level, msg) =>
+    if @flag.opened
+      @fh\write msg if (L.levels[level] >= L.levels[L.level]) and (not contains tag, L.exclude)
+      @fh\flush!
+    else
+      error "Pestersink $ sink is not open!"
+  close: =>
+    if @flag.opened
+      @fh\close!
+      @flag.opened = false
+}
+Pesterlog  = (channel, location="log/#{channel}.log") -> Logger {
+  color:         false
+  name:          channel
+  sink:          sink.file location
+  level:         "none"
+  levels:        levels {"none", "all"}
+  time:          => os.date "%X"
+  date:          => os.date "%x"
+  header: (t, l) => "#{@date!} #{@time!} // #{@name} // "
+  footer: (t, l) => "\n"
+  exclude:       {"hide"}
+}
+
+-- table of loggers
+LOGGERS = {}
+LOGFUNC = {}
 
 -- random things
 chance.core.seed os.time!
@@ -93,6 +129,10 @@ COMMANDS =
   UNBLOCK: toCommand "UNBLOCK"
   -- mood (meta)
   MOOD: (n) -> "MOOD >#{n}"
+  -- getmood (meta)
+  GETMOOD: (st) -> switch type st
+    when "string" then return "GETMOOD #{st}"
+    when "table"  then return "GETMOOD #{table.concat st, ''}"
   -- time (memo)
   -- h is hours, m is minutes
   -- 0, 0 is present
@@ -313,8 +353,6 @@ class Quirk
 
 -- User class
 class User
-  -- TODO moods
-  -- TODO getmoods
   -- TODO logs
   -- new user
   new: (nick, color={r:0,g:0,b:0}, username="pcc31") =>
@@ -325,23 +363,32 @@ class User
     @quirks   = {}
     @blocked  = {}
     @friends  = {}
+    @mood     = "chummy"
     @moods    = {}
+    @moodl_   = {}
+    @logging  = false
 
-    @hook (user, chan, msg) ->
-      print chan, user.nick, msg
-      
-      if user != @handle and msg\match"GETMOOD " and msg\match @handle 
+    -- hook for polling
+    @user\hook "OnChat", "polling", (sender, channel, message) ->
+      return unless channel     == "#pesterchum"
+      return unless sender.nick != @handle
+      if (message\match "^GETMOOD") and (message\match @handle)
         @sendMood!
-      else if user != @handle and msg\match"MOOD >[0-9]+"
-        @moods[user.nick] = moodn tonumber msg\match"[0-9]+"
-        print "#{user.nick} is now #{@moods[user.nick]}"
+    -- hook for logging
+    @user\hook "OnChat", "logging", (sender, channel, message) ->
+      log "#{sender.nick} -> #{channel}", message
+      @log sender, channel, message
 
   -- connect
   connect: (t={}) =>
     t.host or= "irc.mindfang.org"
     t.port or= 6667
+    @logging = t.log or false
     @user\connect t.host, t.port
-    @user\join "#pesterchum" if t.centralize
+    if t.centralize
+      @centralized = true
+      @user\join "#pesterchum"
+      @sendMood!
   -- disconnect
   disconnect: (message="#{@handle} quit.") =>
     for name, chan in pairs @channels
@@ -356,6 +403,21 @@ class User
     for name, quirk in pairs @quirks
       message = quirk\apply message
     @channels[target]\send message
+    @log {nick: @handle}, target, message if @logging  
+
+  -- log a message into the appropriate channel
+  log: (sender, channel, message) =>
+    return                                                                    unless @logging
+    if channel == @handle
+      LOGGERS[sender.nick] = Pesterlog sender.nick, "log/#{sender.nick}.log" unless LOGGERS[sender.nick]
+      LOGFUNC[sender.nick] = LOGGERS[sender.nick] "none"                     unless LOGFUNC[sender.nick]
+      lf = LOGFUNC[sender.nick]
+      lf "#{sender.nick}: #{message}"
+    else
+      LOGGERS[channel] = Pesterlog channel, "log/#{channel}.log" unless LOGGERS[channel]
+      LOGFUNC[channel] = LOGGERS[channel] "none"                 unless LOGFUNC[channel]
+      lf = LOGFUNC[channel]
+      lf "#{sender.nick}: #{message}"
 
   -- add a quirk
   quirk: (name, quirk) => @quirks[name] = quirk
@@ -369,14 +431,64 @@ class User
 
   -- send mood
   sendMood: =>
-    @join Memo "pesterchum" unless @channels["#pesterchum"]
-    @user\sendChat "#pesterchum", COMMANDS.MOOD REVMOODS[mood]
+    -- FIXME pesterchum cannot be an actual memo, since it is meta
+    --       and we don't want to send TIME commands
+    --@join Memo "pesterchum" unless @channels["#pesterchum"]
+    @user\join "#pesterchum" unless @centralized
+    @user\sendChat "#pesterchum", COMMANDS.MOOD REVMOODS[@mood]
 
   -- set the mood
+  -- argument is a string
   setMood: (mood) =>
     error "invalid mood" unless REVMOODS[mood]
-    @mood = moods
+    @mood = mood
     @sendMood!
+
+  -- set the mood for another user
+  setMoodFor: (handle, mood, all) =>
+    if all
+      @moodl_[all][handle] = false
+      @moods[handle]       = mood
+      DONE = true
+      for nck, v in pairs @moodl_[all]
+        DONE = false if v
+      @user\unhook "OnChat", all if DONE
+    else
+      @user\unhook "OnChat", handle
+      @moods[handle] = mood
+
+  -- drops getting a mood for someone
+  stopGetMood: (handle) =>
+    pcall -> @user\unhook "OnChat", handle
+    for k, v in pairs @moodl_
+      v[handle] = nil if k\match handle
+    log "stopGetMood #{handle}"
+
+  -- gets the mood for an user or list of users
+  getMood: (handle) =>
+    -- what this does is setting a hook only when we are looking for an user
+    -- it is then removed when the user or users are found
+    if "string" == type handle
+      @user\hook "OnChat", handle, (sender, channel, message) ->
+        return unless channel == "#pesterchum"
+        log sender.nick, message
+        return unless sender.nick\match handle
+        return unless message\match "^MOOD"
+        @setMoodFor handle, message
+    elseif "table" == type handle
+      -- we will remove the usernames for here and only unhook when all are removed
+      all = table.concat handle, ""
+      @moodl_[all] = {v, true for k, v in pairs handle}
+      -- hook
+      @user\hook "OnChat", all, (sender, channel, message) ->
+        return unless channel == "#pesterchum"
+        log sender.nick, message
+        return unless message\match "^MOOD"
+        for nick in *handle
+          continue unless sender.nick\match nick
+          @setMoodFor nick, message, all
+    -- send poll
+    @user\sendChat "#pesterchum", COMMANDS.GETMOOD handle
 
   -- join a memo or pester someone
   join: (channel) =>
